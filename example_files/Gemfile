@@ -81,3 +81,5 @@ elsif allow_local
 else
   gem 'urbanopt-reporting', '~> 0.3.6'
 end
+
+gem 'urbanopt-scenario', github: 'URBANopt/urbanopt-scenario-gem', branch: 'bundle_bug'

@@ -62,3 +62,5 @@ allow_local = ENV['FAVOR_LOCAL_GEMS']
 # elsif allow_local
   # gem 'urbanopt-reporting', github: 'URBANopt/urbanopt-reporting-gem', branch: 'develop'
 # end
+
+gem 'urbanopt-scenario', github: 'URBANopt/urbanopt-scenario-gem', branch: 'bundle_bug'
