@@ -63,4 +63,6 @@ allow_local = ENV['FAVOR_LOCAL_GEMS']
   # gem 'urbanopt-reporting', github: 'URBANopt/urbanopt-reporting-gem', branch: 'develop'
 # end
 
-gem 'urbanopt-scenario', github: 'URBANopt/urbanopt-scenario-gem', branch: 'bundle_bug'
+gem 'openstudio-extension', path: '../OpenStudio-extension-gem'
+gem 'urbanopt-scenario', path: '../urbanopt-scenario-gem'
+# gem 'urbanopt-scenario', github: 'URBANopt/urbanopt-scenario-gem', branch: 'bundle_bug'
