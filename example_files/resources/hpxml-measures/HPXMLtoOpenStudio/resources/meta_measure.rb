@@ -2,7 +2,7 @@
 
 require 'fileutils'
 
-def run_hpxml_workflow(rundir, hpxml, measures, measures_dir, debug: false, output_vars: [],
+def run_hpxml_workflow(rundir, measures, measures_dir, debug: false, output_vars: [],
                        output_meters: [], run_measures_only: false, print_prefix: '')
   rm_path(rundir)
   FileUtils.mkdir_p(rundir)
@@ -51,7 +51,13 @@ def run_hpxml_workflow(rundir, hpxml, measures, measures_dir, debug: false, outp
   forward_translator = OpenStudio::EnergyPlus::ForwardTranslator.new
   forward_translator.setExcludeLCCObjects(true)
   model_idf = forward_translator.translateModel(model)
-  report_ft_errors_warnings(forward_translator, rundir)
+  success = report_ft_errors_warnings(forward_translator, rundir)
+
+  if not success
+    print "#{print_prefix}Creating input unsuccessful.\n"
+    print "#{print_prefix}See #{File.join(rundir, 'run.log')} for details.\n"
+    return { success: false, runner: runner }
+  end
 
   # Apply reporting measure output requests
   apply_energyplus_output_requests(measures_dir, measures, runner, model, model_idf)
@@ -274,6 +280,19 @@ def get_argument_map(model, measure, provided_args, lookup_file, measure_name, r
   return argument_map
 end
 
+def get_value_from_workflow_step_value(step_value)
+  variant_type = step_value.variantType
+  if variant_type == 'Boolean'.to_VariantType
+    return step_value.valueAsBoolean
+  elsif variant_type == 'Double'.to_VariantType
+    return step_value.valueAsDouble
+  elsif variant_type == 'Integer'.to_VariantType
+    return step_value.valueAsInteger
+  elsif variant_type == 'String'.to_VariantType
+    return step_value.valueAsString
+  end
+end
+
 def run_measure(model, measure, argument_map, runner)
   begin
     # run the measure
@@ -296,6 +315,11 @@ def run_measure(model, measure, argument_map, runner)
     end
     if result_child.finalCondition.is_initialized
       runner.registerFinalCondition(result_child.finalCondition.get.logMessage)
+    end
+
+    # re-register runner child registered values on the parent runner
+    result_child.stepValues.each do |step_value|
+      runner.registerValue(step_value.name, get_value_from_workflow_step_value(step_value))
     end
 
     # log messages
@@ -338,7 +362,7 @@ end
 def register_error(msg, runner = nil)
   if not runner.nil?
     runner.registerError(msg)
-    fail msg # OS 2.0 will handle this more gracefully
+    fail msg
   else
     raise "ERROR: #{msg}"
   end
@@ -388,14 +412,17 @@ end
 
 def report_ft_errors_warnings(forward_translator, rundir)
   # Report warnings/errors
+  success = true
   File.open(File.join(rundir, 'run.log'), 'a') do |f|
     forward_translator.warnings.each do |s|
       f << "FT Warning: #{s.logMessage}\n"
     end
     forward_translator.errors.each do |s|
       f << "FT Error: #{s.logMessage}\n"
+      success = false
     end
   end
+  return success
 end
 
 def report_os_warnings(os_log, rundir)
@@ -439,4 +466,38 @@ class String
 
     return true
   end
+end
+
+def get_argument_values(runner, arguments, user_arguments)
+  args = {}
+  arguments.each do |argument|
+    if argument.required
+      case argument.type
+      when 'Choice'.to_OSArgumentType
+        args[argument.name] = runner.getStringArgumentValue(argument.name, user_arguments)
+      when 'Boolean'.to_OSArgumentType
+        args[argument.name] = runner.getBoolArgumentValue(argument.name, user_arguments)
+      when 'Double'.to_OSArgumentType
+        args[argument.name] = runner.getDoubleArgumentValue(argument.name, user_arguments)
+      when 'Integer'.to_OSArgumentType
+        args[argument.name] = runner.getIntegerArgumentValue(argument.name, user_arguments)
+      when 'String'.to_OSArgumentType
+        args[argument.name] = runner.getStringArgumentValue(argument.name, user_arguments)
+      end
+    else
+      case argument.type
+      when 'Choice'.to_OSArgumentType
+        args[argument.name] = runner.getOptionalStringArgumentValue(argument.name, user_arguments)
+      when 'Boolean'.to_OSArgumentType
+        args[argument.name] = runner.getOptionalStringArgumentValue(argument.name, user_arguments)
+      when 'Double'.to_OSArgumentType
+        args[argument.name] = runner.getOptionalDoubleArgumentValue(argument.name, user_arguments)
+      when 'Integer'.to_OSArgumentType
+        args[argument.name] = runner.getOptionalIntegerArgumentValue(argument.name, user_arguments)
+      when 'String'.to_OSArgumentType
+        args[argument.name] = runner.getOptionalStringArgumentValue(argument.name, user_arguments)
+      end
+    end
+  end
+  return args
 end

@@ -21,6 +21,39 @@ class Geometry
     return azimuth
   end
 
+  def self.add_rim_joist(model, polygon, space, rim_joist_height, z)
+    if rim_joist_height > 0
+      # make polygons
+      p = OpenStudio::Point3dVector.new
+      polygon.each do |point|
+        p << OpenStudio::Point3d.new(point.x, point.y, z)
+      end
+      rim_joist_polygon = p
+
+      # make space
+      rim_joist_space = OpenStudio::Model::Space::fromFloorPrint(rim_joist_polygon, rim_joist_height, model)
+      rim_joist_space = rim_joist_space.get
+
+      space.surfaces.each do |surface|
+        next if surface.surfaceType.downcase != 'roofceiling'
+
+        surface.remove
+      end
+
+      rim_joist_space.surfaces.each do |surface|
+        next if surface.surfaceType.downcase != 'floor'
+
+        surface.remove
+      end
+
+      rim_joist_space.surfaces.each do |surface|
+        surface.setSpace(space)
+      end
+
+      rim_joist_space.remove
+    end
+  end
+
   def self.create_single_family_detached(runner:,
                                          model:,
                                          geometry_cfa:,
@@ -33,6 +66,7 @@ class Geometry
                                          geometry_garage_position:,
                                          geometry_foundation_type:,
                                          geometry_foundation_height:,
+                                         geometry_rim_joist_height:,
                                          geometry_attic_type:,
                                          geometry_roof_type:,
                                          geometry_roof_pitch:,
@@ -47,6 +81,7 @@ class Geometry
     garage_position = geometry_garage_position
     foundation_type = geometry_foundation_type
     foundation_height = geometry_foundation_height
+    rim_joist_height = geometry_rim_joist_height
     attic_type = geometry_attic_type
     roof_type = geometry_roof_type
     roof_pitch = geometry_roof_pitch
@@ -79,6 +114,7 @@ class Geometry
     garage_width = UnitConversions.convert(garage_width, 'ft', 'm')
     garage_depth = UnitConversions.convert(garage_depth, 'ft', 'm')
     foundation_height = UnitConversions.convert(foundation_height, 'ft', 'm')
+    rim_joist_height = UnitConversions.convert(rim_joist_height, 'ft', 'm')
 
     garage_area = garage_width * garage_depth
     has_garage = false
@@ -126,12 +162,9 @@ class Geometry
       return false
     end
 
-    # starting spaces
-    runner.registerInitialCondition("The building started with #{model.getSpaces.size} spaces.")
-
     # create living zone
     living_zone = OpenStudio::Model::ThermalZone.new(model)
-    living_zone.setName('living zone')
+    living_zone.setName(HPXML::LocationLivingSpace)
 
     foundation_offset = 0.0
     if foundation_type == HPXML::FoundationTypeAmbient
@@ -142,13 +175,14 @@ class Geometry
     foundation_polygon_with_wrong_zs = nil
     for floor in (0..num_floors - 1)
 
-      z = wall_height * floor + foundation_offset
+      z = wall_height * floor + foundation_offset + rim_joist_height
 
-      if has_garage && (z == foundation_offset) # first floor and has garage
+      if has_garage && (z == foundation_offset + rim_joist_height) # first floor and has garage
 
         # create garage zone
+        garage_space_name = HPXML::LocationGarage
         garage_zone = OpenStudio::Model::ThermalZone.new(model)
-        garage_zone.setName('garage zone')
+        garage_zone.setName(garage_space_name)
 
         # make points and polygons
         if garage_position == 'Right'
@@ -168,12 +202,10 @@ class Geometry
         # make space
         garage_space = OpenStudio::Model::Space::fromFloorPrint(garage_polygon, wall_height, model)
         garage_space = garage_space.get
-        garage_space_name = 'garage space'
         garage_space.setName(garage_space_name)
         garage_space_type = OpenStudio::Model::SpaceType.new(model)
-        garage_space_type.setStandardsSpaceType('garage')
+        garage_space_type.setStandardsSpaceType(garage_space_name)
         garage_space.setSpaceType(garage_space_type)
-        runner.registerInfo("Set #{garage_space_name}.")
 
         # set this to the garage zone
         garage_space.setThermalZone(garage_zone)
@@ -212,14 +244,13 @@ class Geometry
           end
         end
         foundation_polygon_with_wrong_zs = living_polygon
-
       else # first floor without garage or above first floor
 
         if has_garage
-          garage_se_point = OpenStudio::Point3d.new(garage_se_point.x, garage_se_point.y, wall_height * floor + foundation_offset)
-          garage_sw_point = OpenStudio::Point3d.new(garage_sw_point.x, garage_sw_point.y, wall_height * floor + foundation_offset)
-          garage_nw_point = OpenStudio::Point3d.new(garage_nw_point.x, garage_nw_point.y, wall_height * floor + foundation_offset)
-          garage_ne_point = OpenStudio::Point3d.new(garage_ne_point.x, garage_ne_point.y, wall_height * floor + foundation_offset)
+          garage_se_point = OpenStudio::Point3d.new(garage_se_point.x, garage_se_point.y, z)
+          garage_sw_point = OpenStudio::Point3d.new(garage_sw_point.x, garage_sw_point.y, z)
+          garage_nw_point = OpenStudio::Point3d.new(garage_nw_point.x, garage_nw_point.y, z)
+          garage_ne_point = OpenStudio::Point3d.new(garage_ne_point.x, garage_ne_point.y, z)
           if garage_position == 'Right'
             sw_point = OpenStudio::Point3d.new(0, 0, z)
             nw_point = OpenStudio::Point3d.new(0, width, z)
@@ -251,7 +282,7 @@ class Geometry
           ne_point = OpenStudio::Point3d.new(length, width, z)
           se_point = OpenStudio::Point3d.new(length, 0, z)
           living_polygon = make_polygon(sw_point, nw_point, ne_point, se_point)
-          if z == foundation_offset
+          if z == foundation_offset + rim_joist_height
             foundation_polygon_with_wrong_zs = living_polygon
           end
 
@@ -263,7 +294,7 @@ class Geometry
       living_space = OpenStudio::Model::Space::fromFloorPrint(living_polygon, wall_height, model)
       living_space = living_space.get
       if floor > 0
-        living_space_name = "living space|story #{floor + 1}"
+        living_space_name = "#{HPXML::LocationLivingSpace}|story #{floor + 1}"
       else
         living_space_name = HPXML::LocationLivingSpace
       end
@@ -271,7 +302,6 @@ class Geometry
       living_space_type = OpenStudio::Model::SpaceType.new(model)
       living_space_type.setStandardsSpaceType(HPXML::LocationLivingSpace)
       living_space.setSpaceType(living_space_type)
-      runner.registerInfo("Set #{living_space_name}.")
 
       # set these to the living zone
       living_space.setThermalZone(living_zone)
@@ -281,7 +311,6 @@ class Geometry
       m[1, 3] = 0
       m[2, 3] = z
       living_space.changeTransformation(OpenStudio::Transformation.new(m))
-
     end
 
     # Attic
@@ -370,23 +399,21 @@ class Geometry
       if (attic_type == HPXML::AtticTypeVented) || (attic_type == HPXML::AtticTypeUnvented)
         # create attic zone
         attic_zone = OpenStudio::Model::ThermalZone.new(model)
-        attic_zone.setName("#{attic_type} zone")
         attic_space.setThermalZone(attic_zone)
         if attic_type == HPXML::AtticTypeVented
-          attic_space_type_name = 'vented attic'
-        else
-          attic_space_type_name = 'unvented attic'
+          attic_space_name = HPXML::LocationAtticVented
+        elsif attic_type == HPXML::AtticTypeUnvented
+          attic_space_name = HPXML::LocationAtticUnvented
         end
+        attic_zone.setName(attic_space_name)
       elsif attic_type == HPXML::AtticTypeConditioned
         attic_space.setThermalZone(living_zone)
-        attic_space_type_name = 'living space'
+        attic_space_name = HPXML::LocationLivingSpace
       end
-      attic_space_name = "#{attic_type} space"
       attic_space.setName(attic_space_name)
       attic_space_type = OpenStudio::Model::SpaceType.new(model)
-      attic_space_type.setStandardsSpaceType(attic_space_type_name)
+      attic_space_type.setStandardsSpaceType(attic_space_name)
       attic_space.setSpaceType(attic_space_type)
-      runner.registerInfo("Set #{attic_space_name}.")
 
       m = initialize_transformation_matrix(OpenStudio::Matrix.new(4, 4, 0))
       m[0, 3] = 0
@@ -403,8 +430,6 @@ class Geometry
 
       # create foundation zone
       foundation_zone = OpenStudio::Model::ThermalZone.new(model)
-      foundation_zone_name = "#{foundation_type} zone"
-      foundation_zone.setName(foundation_zone_name)
 
       # make polygons
       p = OpenStudio::Point3dVector.new
@@ -417,22 +442,21 @@ class Geometry
       foundation_space = OpenStudio::Model::Space::fromFloorPrint(foundation_polygon, foundation_height, model)
       foundation_space = foundation_space.get
       if foundation_type == HPXML::FoundationTypeCrawlspaceVented
-        foundation_space_type_name = 'vented crawlspace'
+        foundation_space_name = HPXML::LocationCrawlspaceVented
       elsif foundation_type == HPXML::FoundationTypeCrawlspaceUnvented
-        foundation_space_type_name = 'unvented crawlspace'
+        foundation_space_name = HPXML::LocationCrawlspaceUnvented
       elsif foundation_type == HPXML::FoundationTypeBasementUnconditioned
-        foundation_space_type_name = 'unconditioned basement'
+        foundation_space_name = HPXML::LocationBasementUnconditioned
       elsif foundation_type == HPXML::FoundationTypeBasementConditioned
-        foundation_space_type_name = 'living space'
+        foundation_space_name = HPXML::LocationBasementConditioned
       elsif foundation_type == HPXML::FoundationTypeAmbient
-        foundation_space_type_name = 'ambient'
+        foundation_space_name = HPXML::LocationOutside
       end
-      foundation_space_name = "#{foundation_type} space"
+      foundation_zone.setName(foundation_space_name)
       foundation_space.setName(foundation_space_name)
       foundation_space_type = OpenStudio::Model::SpaceType.new(model)
-      foundation_space_type.setStandardsSpaceType(foundation_space_type_name)
+      foundation_space_type.setStandardsSpaceType(foundation_space_name)
       foundation_space.setSpaceType(foundation_space_type)
-      runner.registerInfo("Set #{foundation_space_name}.")
 
       # set these to the foundation zone
       foundation_space.setThermalZone(foundation_zone)
@@ -456,6 +480,8 @@ class Geometry
       m[2, 3] = z
       foundation_space.changeTransformation(OpenStudio::Transformation.new(m))
 
+      # Rim Joist
+      add_rim_joist(model, foundation_polygon_with_wrong_zs, foundation_space, rim_joist_height, foundation_height)
     end
 
     # put all of the spaces in the model into a vector
@@ -514,10 +540,10 @@ class Geometry
             se_point = OpenStudio::Point3d.new(se_point.x, se_point.y, se_point.z - living_space.zOrigin)
           end
         else
-          nw_point = OpenStudio::Point3d.new(nw_point.x, nw_point.y, num_floors * nw_point.z)
-          ne_point = OpenStudio::Point3d.new(ne_point.x, ne_point.y, num_floors * ne_point.z)
-          sw_point = OpenStudio::Point3d.new(sw_point.x, sw_point.y, num_floors * sw_point.z)
-          se_point = OpenStudio::Point3d.new(se_point.x, se_point.y, num_floors * se_point.z)
+          nw_point = OpenStudio::Point3d.new(nw_point.x, nw_point.y, num_floors * nw_point.z + rim_joist_height)
+          ne_point = OpenStudio::Point3d.new(ne_point.x, ne_point.y, num_floors * ne_point.z + rim_joist_height)
+          sw_point = OpenStudio::Point3d.new(sw_point.x, sw_point.y, num_floors * sw_point.z + rim_joist_height)
+          se_point = OpenStudio::Point3d.new(se_point.x, se_point.y, num_floors * se_point.z + rim_joist_height)
         end
 
         garage_attic_height = (ne_point.x - nw_point.x) / 2 * roof_pitch
@@ -538,8 +564,8 @@ class Geometry
             roof_s_point = OpenStudio::Point3d.new((sw_point.x + se_point.x) / 2, sw_point.y, garage_attic_height + wall_height)
           end
         else
-          roof_n_point = OpenStudio::Point3d.new((nw_point.x + ne_point.x) / 2, nw_point.y + garage_attic_height / roof_pitch, num_floors * wall_height + garage_attic_height)
-          roof_s_point = OpenStudio::Point3d.new((sw_point.x + se_point.x) / 2, sw_point.y, num_floors * wall_height + garage_attic_height)
+          roof_n_point = OpenStudio::Point3d.new((nw_point.x + ne_point.x) / 2, nw_point.y + garage_attic_height / roof_pitch, num_floors * wall_height + garage_attic_height + rim_joist_height)
+          roof_s_point = OpenStudio::Point3d.new((sw_point.x + se_point.x) / 2, sw_point.y, num_floors * wall_height + garage_attic_height + rim_joist_height)
         end
 
         polygon_w_roof = make_polygon(nw_point, sw_point, roof_s_point, roof_n_point)
@@ -560,31 +586,29 @@ class Geometry
         wall_s.setOutsideBoundaryCondition('Outdoors')
 
         garage_attic_space = OpenStudio::Model::Space.new(model)
-        garage_attic_space_name = 'garage attic space'
-        garage_attic_space.setName(garage_attic_space_name)
         deck_w.setSpace(garage_attic_space)
         deck_e.setSpace(garage_attic_space)
         wall_n.setSpace(garage_attic_space)
         wall_s.setSpace(garage_attic_space)
 
         if attic_type == HPXML::AtticTypeConditioned
-          garage_attic_space_type_name = 'living space'
+          garage_attic_space_name = attic_space_name
           garage_attic_space.setThermalZone(living_zone)
         else
           if num_floors > 1
-            garage_attic_space_type_name = attic_space_type_name
+            garage_attic_space_name = attic_space_name
             garage_attic_space.setThermalZone(attic_zone)
           else
-            garage_attic_space_type_name = 'garage'
+            garage_attic_space_name = garage_space_name
             garage_attic_space.setThermalZone(garage_zone)
           end
         end
 
         surface.createAdjacentSurface(garage_attic_space) # garage attic floor
+        garage_attic_space.setName(garage_attic_space_name)
         garage_attic_space_type = OpenStudio::Model::SpaceType.new(model)
-        garage_attic_space_type.setStandardsSpaceType(garage_attic_space_type_name)
+        garage_attic_space_type.setStandardsSpaceType(garage_attic_space_name)
         garage_attic_space.setSpaceType(garage_attic_space_type)
-        runner.registerInfo("Set #{garage_attic_space_name}.")
 
         # put all of the spaces in the model into a vector
         spaces = OpenStudio::Model::SpaceVector.new
@@ -620,15 +644,45 @@ class Geometry
 
         garage_attic_space.remove
 
+        # remove other unused surfaces
+        # TODO: remove this once geometry methods are fixed in openstudio 3.x
+        attic_space.surfaces.each do |surface1|
+          next if surface1.surfaceType != 'RoofCeiling'
+
+          attic_space.surfaces.each do |surface2|
+            next if surface2.surfaceType != 'RoofCeiling'
+            next if surface1 == surface2
+
+            if has_same_vertices(surface1, surface2)
+              surface1.remove
+              surface2.remove
+            end
+          end
+        end
+
         break
       end
     end
 
+    garage_spaces = get_garage_spaces(model.getSpaces)
+
     # set foundation outside boundary condition to Kiva "foundation"
     model.getSurfaces.each do |surface|
-      next if surface.outsideBoundaryCondition.downcase != 'ground'
+      if surface.outsideBoundaryCondition.downcase == 'ground'
+        surface.setOutsideBoundaryCondition('Foundation')
+      elsif (UnitConversions.convert(rim_joist_height, 'm', 'ft') - get_surface_height(surface)).abs < 0.001
+        next if surface.surfaceType.downcase != 'wall'
 
-      surface.setOutsideBoundaryCondition('Foundation')
+        garage_spaces.each do |garage_space|
+          garage_space.surfaces.each do |garage_surface|
+            next if garage_surface.surfaceType.downcase != 'floor'
+
+            if get_walls_connected_to_floor([surface], garage_surface, false).include? surface
+              surface.setOutsideBoundaryCondition('Foundation')
+            end
+          end
+        end
+      end
     end
 
     # set foundation walls adjacent to garage to adiabatic
@@ -639,7 +693,7 @@ class Geometry
 
       foundation_walls << surface
     end
-    garage_spaces = get_garage_spaces(model.getSpaces)
+
     garage_spaces.each do |garage_space|
       garage_space.surfaces.each do |surface|
         next if surface.surfaceType.downcase != 'floor'
@@ -652,6 +706,15 @@ class Geometry
     end
 
     return true
+  end
+
+  def self.has_same_vertices(surface1, surface2)
+    if getSurfaceXValues([surface1]) == getSurfaceXValues([surface2]) &&
+       getSurfaceYValues([surface1]) == getSurfaceYValues([surface2]) &&
+       getSurfaceZValues([surface1]) == getSurfaceZValues([surface2])
+      return true
+    end
+    return false
   end
 
   def self.make_one_space_from_multiple_spaces(model, spaces)
@@ -912,12 +975,12 @@ class Geometry
         # If the total window area for the facade is less than the minimum window area,
         # set all of the window area to the surface with the greatest available wall area on any facade
         surface = surface_avail_area.max_by { |k, v| v }[0]
-        next if Geometry.get_facade_for_surface(surface) == facade
+        next if get_facade_for_surface(surface) == facade
         next if surface_avail_area[surface] == facade_avail_area[facade]
 
         surface_window_area[surface] += target_facade_areas[facade]
 
-        new_facade = Geometry.get_facade_for_surface(surface)
+        new_facade = get_facade_for_surface(surface)
         area_moved = target_facade_areas[facade]
         target_facade_areas[facade] = 0
         target_facade_areas[new_facade] = surface_window_area[surface]
@@ -1052,8 +1115,6 @@ class Geometry
         sub_surface.setName("#{surface.name} - Skylight")
         sub_surface.setSurface(surface)
 
-        runner.registerInfo("Added a skylight, totaling #{skylight_area.round(1)} ft^2, to #{surface.name}.")
-
         if not constructions[facade].nil?
           sub_surface.setConstruction(constructions[facade])
         end
@@ -1140,7 +1201,7 @@ class Geometry
         add_window_to_wall(surface, window_width, window_height, group_cx, group_cy, win_num, facade, constructions, model, runner)
       end
     end
-    runner.registerInfo("Added #{num_windows} window(s), totaling #{window_area.round(1)} ft^2, to #{surface.name}.")
+
     return true
   end
 
@@ -1321,7 +1382,7 @@ class Geometry
         next unless surface.outsideBoundaryCondition.downcase == 'adiabatic'
 
         model.getSpaces.each do |potential_corridor_space|
-          next unless potential_corridor_space.spaceType.get.standardsSpaceType.get == 'corridor'
+          next unless potential_corridor_space.spaceType.get.standardsSpaceType.get == HPXML::LocationOtherHousingUnit
 
           potential_corridor_space.surfaces.each do |potential_corridor_surface|
             next unless surface.reverseEqualVertices(potential_corridor_surface)
@@ -1431,8 +1492,6 @@ class Geometry
 
     if door_sub_surface.nil? && unit_has_door
       runner.registerWarning('Could not find appropriate surface for the door. No door was added.')
-    elsif not door_sub_surface.nil?
-      runner.registerInfo("Added #{door_area.round(1)} ft^2 door.")
     end
 
     return true
@@ -1460,6 +1519,7 @@ class Geometry
                                          geometry_corridor_position:,
                                          geometry_foundation_type:,
                                          geometry_foundation_height:,
+                                         geometry_rim_joist_height:,
                                          geometry_attic_type:,
                                          geometry_roof_type:,
                                          geometry_roof_pitch:,
@@ -1474,6 +1534,7 @@ class Geometry
     corridor_position = geometry_corridor_position
     foundation_type = geometry_foundation_type
     foundation_height = geometry_foundation_height
+    rim_joist_height = geometry_rim_joist_height
     attic_type = geometry_attic_type
     roof_type = geometry_roof_type
     roof_pitch = geometry_roof_pitch
@@ -1521,14 +1582,16 @@ class Geometry
       runner.registerError('Invalid horizontal location entered.')
       return false
     end
+    if (unit_width == 1) && (horizontal_location != 'None')
+      runner.registerWarning("No #{horizontal_location} location exists, setting horizontal_location to 'None'")
+      horizontal_location = 'None'
+    end
 
     # Convert to SI
     cfa = UnitConversions.convert(cfa, 'ft^2', 'm^2')
     wall_height = UnitConversions.convert(wall_height, 'ft', 'm')
     foundation_height = UnitConversions.convert(foundation_height, 'ft', 'm')
-
-    # starting spaces
-    runner.registerInitialCondition("The building started with #{model.getSpaces.size} spaces.")
+    rim_joist_height = UnitConversions.convert(rim_joist_height, 'ft', 'm')
 
     if (foundation_type == HPXML::FoundationTypeBasementConditioned) && (attic_type == HPXML::AtticTypeConditioned)
       footprint = cfa / (num_floors + 2)
@@ -1546,11 +1609,11 @@ class Geometry
     foundation_back_polygon = nil
 
     # create the front prototype unit
-    nw_point = OpenStudio::Point3d.new(0, 0, 0)
-    ne_point = OpenStudio::Point3d.new(x, 0, 0)
-    sw_point = OpenStudio::Point3d.new(0, -y, 0)
-    se_point = OpenStudio::Point3d.new(x, -y, 0)
-    living_polygon = Geometry.make_polygon(sw_point, nw_point, ne_point, se_point)
+    nw_point = OpenStudio::Point3d.new(0, 0, rim_joist_height)
+    ne_point = OpenStudio::Point3d.new(x, 0, rim_joist_height)
+    sw_point = OpenStudio::Point3d.new(0, -y, rim_joist_height)
+    se_point = OpenStudio::Point3d.new(x, -y, rim_joist_height)
+    living_polygon = make_polygon(sw_point, nw_point, ne_point, se_point)
 
     # foundation
     if (foundation_height > 0) && foundation_front_polygon.nil?
@@ -1574,7 +1637,6 @@ class Geometry
     living_spaces_front << living_space
 
     # Adiabatic surfaces for walls
-    ##############################################################################################
     # Map unit location to adiabatic surfaces (#if `key` unit then make `value(s)` adiabatic)
     horz_hash = { 'Left' => ['right'], 'Right' => ['left'], 'Middle' => ['left', 'right'], 'None' => [] }
     adb_facade = horz_hash[horizontal_location]
@@ -1582,35 +1644,21 @@ class Geometry
       adb_facade += ['back']
     end
 
-    if adb_facade.include? 'left'
-      left_neighbor_offset = 0
-    end
-    if adb_facade.include? 'right'
-      right_neighbor_offset = 0
-    end
-    if adb_facade.include? 'back'
-      back_neighbor_offset = 0
-    end
-    if adb_facade.include? 'front'
-      front_neighbor_offset = 0
-    end
-
     adiabatic_surf = adb_facade
     # Make surfaces adiabatic
     model.getSpaces.each do |space|
       space.surfaces.each do |surface|
-        os_facade = Geometry.get_facade_for_surface(surface)
+        os_facade = get_facade_for_surface(surface)
         next unless surface.surfaceType == 'Wall'
         next unless adb_facade.include? os_facade
         x_ft = UnitConversions.convert(x, 'm', 'ft')
-        max_x = Geometry.getSurfaceXValues([surface]).max
-        min_x = Geometry.getSurfaceXValues([surface]).min
+        max_x = getSurfaceXValues([surface]).max
+        min_x = getSurfaceXValues([surface]).min
         next if ((max_x - x_ft).abs >= 0.01) && (min_x > 0)
 
         surface.setOutsideBoundaryCondition('Adiabatic')
       end
     end
-    ##############################################################################################
 
     attic_space_front = nil
     attic_space_back = nil
@@ -1622,7 +1670,7 @@ class Geometry
       new_living_space.setName("living space|story #{story}")
       new_living_space.setSpaceType(living_space_type)
 
-      m = Geometry.initialize_transformation_matrix(OpenStudio::Matrix.new(4, 4, 0))
+      m = initialize_transformation_matrix(OpenStudio::Matrix.new(4, 4, 0))
       m[2, 3] = wall_height * (story - 1)
       new_living_space.setTransformation(OpenStudio::Transformation.new(m))
       new_living_space.setThermalZone(living_zone)
@@ -1632,7 +1680,7 @@ class Geometry
 
     # attic
     if roof_type != 'flat'
-      attic_space = get_attic_space(model, x, y, wall_height, num_floors, num_units, roof_pitch, roof_type)
+      attic_space = get_attic_space(model, x, y, wall_height, num_floors, num_units, roof_pitch, roof_type, rim_joist_height)
       if attic_type == HPXML::AtticTypeConditioned
         attic_space.setName("#{attic_type} space")
         attic_space.setThermalZone(living_zone)
@@ -1644,10 +1692,6 @@ class Geometry
       end
     end
 
-    # create the unit
-    unit_spaces_hash = {}
-    unit_spaces_hash[1] = [living_spaces_front, 1]
-
     # foundation
     if foundation_height > 0
       foundation_spaces = []
@@ -1656,7 +1700,7 @@ class Geometry
       foundation_space_front = []
       foundation_space = OpenStudio::Model::Space::fromFloorPrint(foundation_front_polygon, foundation_height, model)
       foundation_space = foundation_space.get
-      m = Geometry.initialize_transformation_matrix(OpenStudio::Matrix.new(4, 4, 0))
+      m = initialize_transformation_matrix(OpenStudio::Matrix.new(4, 4, 0))
       m[2, 3] = foundation_height
       foundation_space.changeTransformation(OpenStudio::Transformation.new(m))
       foundation_space.setXOrigin(0)
@@ -1665,20 +1709,19 @@ class Geometry
 
       if foundation_type == HPXML::FoundationTypeBasementConditioned
         foundation_zone = OpenStudio::Model::ThermalZone.new(model)
-        foundation_space.setName("#{foundation_type} space")
-        foundation_zone.setName("#{foundation_type} zone")
+        foundation_space.setName(HPXML::FoundationTypeBasementConditioned)
+        foundation_zone.setName(HPXML::FoundationTypeBasementConditioned)
         foundation_space.setThermalZone(foundation_zone)
         foundation_space_type = OpenStudio::Model::SpaceType.new(model)
-        foundation_space_type.setStandardsSpaceType('living space')
+        foundation_space_type.setStandardsSpaceType(HPXML::LocationBasementConditioned)
         foundation_space.setSpaceType(foundation_space_type)
       end
 
       foundation_space_front << foundation_space
       foundation_spaces << foundation_space
 
-      if foundation_type == HPXML::FoundationTypeBasementConditioned
-        unit_spaces_hash[1][0] << foundation_space
-      end
+      # Rim Joist
+      add_rim_joist(model, foundation_front_polygon, foundation_space, rim_joist_height, 0)
 
       # put all of the spaces in the model into a vector
       spaces = OpenStudio::Model::SpaceVector.new
@@ -1691,46 +1734,42 @@ class Geometry
       OpenStudio::Model.matchSurfaces(spaces)
 
       if [HPXML::FoundationTypeCrawlspaceVented, HPXML::FoundationTypeCrawlspaceUnvented, HPXML::FoundationTypeBasementUnconditioned].include? foundation_type
-        foundation_space = Geometry.make_one_space_from_multiple_spaces(model, foundation_spaces)
+        # create foundation zone
+        foundation_zone = OpenStudio::Model::ThermalZone.new(model)
+
+        foundation_space = make_one_space_from_multiple_spaces(model, foundation_spaces)
         if foundation_type == HPXML::FoundationTypeCrawlspaceVented
-          foundation_space_type_name = 'vented crawlspace'
+          foundation_space_name = HPXML::LocationCrawlspaceVented
         elsif foundation_type == HPXML::FoundationTypeCrawlspaceUnvented
-          foundation_space_type_name = 'unvented crawlspace'
+          foundation_space_name = HPXML::LocationCrawlspaceUnvented
         elsif foundation_type == HPXML::FoundationTypeBasementUnconditioned
-          foundation_space_type_name = 'unconditioned basement'
+          foundation_space_name = HPXML::LocationBasementUnconditioned
         end
-        if [HPXML::FoundationTypeCrawlspaceVented, HPXML::FoundationTypeCrawlspaceUnvented].include? foundation_type
-          foundation_space.setName("#{foundation_type} space")
-          foundation_zone = OpenStudio::Model::ThermalZone.new(model)
-          foundation_zone.setName('crawl zone')
-          foundation_space.setThermalZone(foundation_zone)
-          foundation_space_type = OpenStudio::Model::SpaceType.new(model)
-          foundation_space_type.setStandardsSpaceType(foundation_space_type_name)
-          foundation_space.setSpaceType(foundation_space_type)
-        elsif foundation_type == HPXML::FoundationTypeBasementUnconditioned
-          foundation_space.setName("#{foundation_type} space")
-          foundation_zone = OpenStudio::Model::ThermalZone.new(model)
-          foundation_zone.setName("#{foundation_type} zone")
-          foundation_space.setThermalZone(foundation_zone)
-          foundation_space_type = OpenStudio::Model::SpaceType.new(model)
-          foundation_space_type.setStandardsSpaceType(foundation_space_type_name)
-          foundation_space.setSpaceType(foundation_space_type)
-        end
+        foundation_zone.setName(foundation_space_name)
+        foundation_space.setName(foundation_space_name)
+        foundation_space_type = OpenStudio::Model::SpaceType.new(model)
+        foundation_space_type.setStandardsSpaceType(foundation_space_name)
+        foundation_space.setSpaceType(foundation_space_type)
+
+        # set these to the foundation zone
+        foundation_space.setThermalZone(foundation_zone)
       end
 
       # set foundation walls to ground
       spaces = model.getSpaces
       spaces.each do |space|
-        next unless Geometry.get_space_floor_z(space) + UnitConversions.convert(space.zOrigin, 'm', 'ft') < 0
+        next unless get_space_floor_z(space) + UnitConversions.convert(space.zOrigin, 'm', 'ft') < 0
         surfaces = space.surfaces
         surfaces.each do |surface|
           next if surface.surfaceType.downcase != 'wall'
 
-          os_facade = Geometry.get_facade_for_surface(surface)
+          os_facade = get_facade_for_surface(surface)
           if adb_facade.include? os_facade
             surface.setOutsideBoundaryCondition('Adiabatic')
-          else
+          elsif getSurfaceZValues([surface]).min < 0
             surface.setOutsideBoundaryCondition('Foundation')
+          else
+            surface.setOutsideBoundaryCondition('Outdoors')
           end
         end
       end
@@ -1749,47 +1788,47 @@ class Geometry
 
     if [HPXML::AtticTypeVented, HPXML::AtticTypeUnvented].include?(attic_type) && (roof_type != 'flat')
       if offset == 0
-        # x *= num_units
-        # if has_rear_units
-        #   x /= 2
-        # end
         attic_spaces.each do |attic_space|
           attic_space.remove
         end
-        attic_space = get_attic_space(model, x, y, wall_height, num_floors, num_units, roof_pitch, roof_type, has_rear_units)
+        attic_space = get_attic_space(model, x, y, wall_height, num_floors, num_units, roof_pitch, roof_type, rim_joist_height, has_rear_units)
       else
-        attic_space = Geometry.make_one_space_from_multiple_spaces(model, attic_spaces)
+        attic_space = make_one_space_from_multiple_spaces(model, attic_spaces)
       end
-      attic_space_name = "#{attic_type} space"
+
+      # set these to the attic zone
+      if (attic_type == HPXML::AtticTypeVented) || (attic_type == HPXML::AtticTypeUnvented)
+        # create attic zone
+        attic_zone = OpenStudio::Model::ThermalZone.new(model)
+        attic_space.setThermalZone(attic_zone)
+        if attic_type == HPXML::AtticTypeVented
+          attic_space_name = HPXML::LocationAtticVented
+        elsif attic_type == HPXML::AtticTypeUnvented
+          attic_space_name = HPXML::LocationAtticUnvented
+        end
+        attic_zone.setName(attic_space_name)
+      elsif attic_type == HPXML::AtticTypeConditioned
+        attic_space.setThermalZone(living_zone)
+        attic_space_name = HPXML::LocationLivingSpace
+      end
       attic_space.setName(attic_space_name)
-      attic_zone = OpenStudio::Model::ThermalZone.new(model)
-      attic_zone.setName("#{attic_type} zone")
-      attic_space.setThermalZone(attic_zone)
-      if attic_type == HPXML::AtticTypeVented
-        attic_space_type_name = 'vented attic'
-      else
-        attic_space_type_name = 'unvented attic'
-      end
       attic_space_type = OpenStudio::Model::SpaceType.new(model)
-      attic_space_type.setStandardsSpaceType(attic_space_type_name)
+      attic_space_type.setStandardsSpaceType(attic_space_name)
       attic_space.setSpaceType(attic_space_type)
     end
 
     # Adiabatic surfaces for attic walls
-    ################################################################
-    # Make surfaces adiabatic
     attic_space.surfaces.each do |surface|
-      os_facade = Geometry.get_facade_for_surface(surface)
+      os_facade = get_facade_for_surface(surface)
       next unless surface.surfaceType == 'Wall'
       next unless adb_facade.include? os_facade
       x_ft = UnitConversions.convert(x, 'm', 'ft')
-      max_x = Geometry.getSurfaceXValues([surface]).max
-      min_x = Geometry.getSurfaceXValues([surface]).min
+      max_x = getSurfaceXValues([surface]).max
+      min_x = getSurfaceXValues([surface]).min
       next if ((max_x - x_ft).abs >= 0.01) && (min_x > 0)
 
       surface.setOutsideBoundaryCondition('Adiabatic')
     end
-    ################################################################
 
     # put all of the spaces in the model into a vector
     spaces = OpenStudio::Model::SpaceVector.new
@@ -1811,108 +1850,61 @@ class Geometry
     return true
   end
 
-  def self.get_attic_space(model, x, y, wall_height, num_floors, num_units, roof_pitch, roof_type, has_rear_units = false)
+  def self.get_attic_space(model, x, y, wall_height, num_floors, num_units, roof_pitch, roof_type, rim_joist_height, has_rear_units = false)
     y_rear = 0
-    if has_rear_units
-      y_tot = y * 2
-      y_peak = 0
-      x_tot = (x * num_units) / 2
-    else
-      y_peak = -y / 2
-      y_tot = y
-      x_tot = x * num_units
-    end
-    # if y > 0
-    nw_point = OpenStudio::Point3d.new(0, 0, wall_height * num_floors)
-    ne_point = OpenStudio::Point3d.new(x, 0, wall_height * num_floors)
-    sw_point = OpenStudio::Point3d.new(0, -y, wall_height * num_floors)
-    se_point = OpenStudio::Point3d.new(x, -y, wall_height * num_floors)
-    # else
-    #   nw_point = OpenStudio::Point3d.new(0, -y, wall_height * num_floors)
-    #   ne_point = OpenStudio::Point3d.new(x, -y, wall_height * num_floors)
-    #   sw_point = OpenStudio::Point3d.new(0, 0, wall_height * num_floors)
-    #   se_point = OpenStudio::Point3d.new(x, 0, wall_height * num_floors)
-    # end
-    attic_polygon = Geometry.make_polygon(sw_point, nw_point, ne_point, se_point)
+    y_peak = -y / 2
+    y_tot = y
+    x_tot = x * num_units
 
-    # if y_tot >= x_tot
-    #   attic_height = (x_tot / 2.0) * roof_pitch
-    # else
-    #   attic_height = (y_tot / 2.0) * roof_pitch
-    # end
+    nw_point = OpenStudio::Point3d.new(0, 0, wall_height * num_floors + rim_joist_height)
+    ne_point = OpenStudio::Point3d.new(x, 0, wall_height * num_floors + rim_joist_height)
+    sw_point = OpenStudio::Point3d.new(0, -y, wall_height * num_floors + rim_joist_height)
+    se_point = OpenStudio::Point3d.new(x, -y, wall_height * num_floors + rim_joist_height)
+    attic_polygon = make_polygon(sw_point, nw_point, ne_point, se_point)
 
-    attic_height = (y_tot / 2.0) * roof_pitch # Roof always has same orientation
+    attic_height = (y_tot / 2.0) * roof_pitch + rim_joist_height # Roof always has same orientation
 
     side_type = nil
     if roof_type == 'gable'
-      # if y > 0
-      # if x <= (y + y_rear)
-      # roof_n_point = OpenStudio::Point3d.new(x / 2.0, y_rear, wall_height * num_floors + attic_height)
-      # roof_s_point = OpenStudio::Point3d.new(x / 2.0, -y, wall_height * num_floors + attic_height)
-      # polygon_w_roof = Geometry.make_polygon(roof_n_point, nw_point, sw_point, roof_s_point)
-      # polygon_e_roof = Geometry.make_polygon(roof_s_point, se_point, ne_point, roof_n_point)
-      # polygon_s_wall = Geometry.make_polygon(roof_s_point, sw_point, se_point)
-      # polygon_n_wall = Geometry.make_polygon(roof_n_point, ne_point, nw_point)
-      # else
-      # roof_w_point = OpenStudio::Point3d.new(0, (y_rear - y) / 2.0, wall_height * num_floors + attic_height)
-      # roof_e_point = OpenStudio::Point3d.new(x, (y_rear - y) / 2.0, wall_height * num_floors + attic_height)
       roof_w_point = OpenStudio::Point3d.new(0, y_peak, wall_height * num_floors + attic_height)
       roof_e_point = OpenStudio::Point3d.new(x, y_peak, wall_height * num_floors + attic_height)
-      polygon_w_roof = Geometry.make_polygon(roof_w_point, roof_e_point, ne_point, nw_point)
-      polygon_e_roof = Geometry.make_polygon(roof_e_point, roof_w_point, sw_point, se_point)
-      polygon_s_wall = Geometry.make_polygon(roof_w_point, nw_point, sw_point)
-      polygon_n_wall = Geometry.make_polygon(roof_e_point, se_point, ne_point)
-      # end
-      # else
-      #   if x <= y.abs
-      #     roof_n_point = OpenStudio::Point3d.new(x / 2.0, -y, wall_height * num_floors + attic_height)
-      #     roof_s_point = OpenStudio::Point3d.new(x / 2.0, 0, wall_height * num_floors + attic_height)
-      #     polygon_w_roof = Geometry.make_polygon(roof_n_point, nw_point, sw_point, roof_s_point)
-      #     polygon_e_roof = Geometry.make_polygon(roof_s_point, se_point, ne_point, roof_n_point)
-      #     polygon_s_wall = Geometry.make_polygon(roof_s_point, sw_point, se_point)
-      #     polygon_n_wall = Geometry.make_polygon(roof_n_point, ne_point, nw_point)
-      #   else
-      #     roof_w_point = OpenStudio::Point3d.new(0, -y / 2.0, wall_height * num_floors + attic_height)
-      #     roof_e_point = OpenStudio::Point3d.new(x, -y / 2.0, wall_height * num_floors + attic_height)
-      #     polygon_w_roof = Geometry.make_polygon(roof_w_point, roof_e_point, ne_point, nw_point)
-      #     polygon_e_roof = Geometry.make_polygon(roof_e_point, roof_w_point, sw_point, se_point)
-      #     polygon_s_wall = Geometry.make_polygon(roof_w_point, nw_point, sw_point)
-      #     polygon_n_wall = Geometry.make_polygon(roof_e_point, se_point, ne_point)
-      #   end
-      # end
+      polygon_w_roof = make_polygon(roof_w_point, roof_e_point, ne_point, nw_point)
+      polygon_e_roof = make_polygon(roof_e_point, roof_w_point, sw_point, se_point)
+      polygon_s_wall = make_polygon(roof_w_point, nw_point, sw_point)
+      polygon_n_wall = make_polygon(roof_e_point, se_point, ne_point)
       side_type = 'Wall'
-    elsif roof_type == 'hip' # TO-DO: not yet implemented for single unit approach
+    elsif roof_type == 'hip'
       if y > 0
         if x <= (y + y_rear)
           roof_n_point = OpenStudio::Point3d.new(x / 2.0, y_rear - x / 2.0, wall_height * num_floors + attic_height)
           roof_s_point = OpenStudio::Point3d.new(x / 2.0, -y + x / 2.0, wall_height * num_floors + attic_height)
-          polygon_w_roof = Geometry.make_polygon(roof_n_point, nw_point, sw_point, roof_s_point)
-          polygon_e_roof = Geometry.make_polygon(roof_s_point, se_point, ne_point, roof_n_point)
-          polygon_s_wall = Geometry.make_polygon(roof_s_point, sw_point, se_point)
-          polygon_n_wall = Geometry.make_polygon(roof_n_point, ne_point, nw_point)
+          polygon_w_roof = make_polygon(roof_n_point, nw_point, sw_point, roof_s_point)
+          polygon_e_roof = make_polygon(roof_s_point, se_point, ne_point, roof_n_point)
+          polygon_s_wall = make_polygon(roof_s_point, sw_point, se_point)
+          polygon_n_wall = make_polygon(roof_n_point, ne_point, nw_point)
         else
           roof_w_point = OpenStudio::Point3d.new((y + y_rear) / 2.0, (y_rear - y) / 2.0, wall_height * num_floors + attic_height)
           roof_e_point = OpenStudio::Point3d.new(x - (y + y_rear) / 2.0, (y_rear - y) / 2.0, wall_height * num_floors + attic_height)
-          polygon_w_roof = Geometry.make_polygon(roof_w_point, sw_point, se_point, roof_e_point)
-          polygon_e_roof = Geometry.make_polygon(roof_e_point, ne_point, nw_point, roof_w_point)
-          polygon_s_wall = Geometry.make_polygon(roof_e_point, se_point, ne_point)
-          polygon_n_wall = Geometry.make_polygon(roof_w_point, nw_point, sw_point)
+          polygon_w_roof = make_polygon(roof_w_point, sw_point, se_point, roof_e_point)
+          polygon_e_roof = make_polygon(roof_e_point, ne_point, nw_point, roof_w_point)
+          polygon_s_wall = make_polygon(roof_e_point, se_point, ne_point)
+          polygon_n_wall = make_polygon(roof_w_point, nw_point, sw_point)
         end
       else
         if x <= y.abs
           roof_n_point = OpenStudio::Point3d.new(x / 2.0, -y - x / 2.0, wall_height * num_floors + attic_height)
           roof_s_point = OpenStudio::Point3d.new(x / 2.0, x / 2.0, wall_height * num_floors + attic_height)
-          polygon_w_roof = Geometry.make_polygon(roof_n_point, nw_point, sw_point, roof_s_point)
-          polygon_e_roof = Geometry.make_polygon(roof_s_point, se_point, ne_point, roof_n_point)
-          polygon_s_wall = Geometry.make_polygon(roof_s_point, sw_point, se_point)
-          polygon_n_wall = Geometry.make_polygon(roof_n_point, ne_point, nw_point)
+          polygon_w_roof = make_polygon(roof_n_point, nw_point, sw_point, roof_s_point)
+          polygon_e_roof = make_polygon(roof_s_point, se_point, ne_point, roof_n_point)
+          polygon_s_wall = make_polygon(roof_s_point, sw_point, se_point)
+          polygon_n_wall = make_polygon(roof_n_point, ne_point, nw_point)
         else
           roof_w_point = OpenStudio::Point3d.new(-y / 2.0, -y / 2.0, wall_height * num_floors + attic_height)
           roof_e_point = OpenStudio::Point3d.new(x + y / 2.0, -y / 2.0, wall_height * num_floors + attic_height)
-          polygon_w_roof = Geometry.make_polygon(roof_w_point, sw_point, se_point, roof_e_point)
-          polygon_e_roof = Geometry.make_polygon(roof_e_point, ne_point, nw_point, roof_w_point)
-          polygon_s_wall = Geometry.make_polygon(roof_e_point, se_point, ne_point)
-          polygon_n_wall = Geometry.make_polygon(roof_w_point, nw_point, sw_point)
+          polygon_w_roof = make_polygon(roof_w_point, sw_point, se_point, roof_e_point)
+          polygon_e_roof = make_polygon(roof_e_point, ne_point, nw_point, roof_w_point)
+          polygon_s_wall = make_polygon(roof_e_point, se_point, ne_point)
+          polygon_n_wall = make_polygon(roof_w_point, nw_point, sw_point)
         end
       end
       side_type = 'RoofCeiling'
@@ -1923,11 +1915,7 @@ class Geometry
     surface_floor.setOutsideBoundaryCondition('Surface')
     surface_w_roof = OpenStudio::Model::Surface.new(polygon_w_roof, model)
     surface_w_roof.setSurfaceType('RoofCeiling')
-    if has_rear_units
-      surface_w_roof.setOutsideBoundaryCondition('Adiabatic') ###
-    else
-      surface_w_roof.setOutsideBoundaryCondition('Outdoors') ###
-    end
+    surface_w_roof.setOutsideBoundaryCondition('Outdoors')
     surface_e_roof = OpenStudio::Model::Surface.new(polygon_e_roof, model)
     surface_e_roof.setSurfaceType('RoofCeiling')
     surface_e_roof.setOutsideBoundaryCondition('Outdoors')
@@ -1966,6 +1954,7 @@ class Geometry
                               geometry_balcony_depth:,
                               geometry_foundation_type:,
                               geometry_foundation_height:,
+                              geometry_rim_joist_height:,
                               **remainder)
 
     cfa = geometry_cfa
@@ -1974,7 +1963,7 @@ class Geometry
     num_floors = geometry_num_floors_above_grade
     aspect_ratio = geometry_aspect_ratio
     level = geometry_level.get
-    horizontal_location = geometry_horizontal_location.get
+    horz_location = geometry_horizontal_location.get
     corridor_position = geometry_corridor_position
     corridor_width = geometry_corridor_width
     inset_width = geometry_inset_width
@@ -1983,17 +1972,25 @@ class Geometry
     balcony_depth = geometry_balcony_depth
     foundation_type = geometry_foundation_type
     foundation_height = geometry_foundation_height
+    rim_joist_height = geometry_rim_joist_height
 
     if level != 'Bottom'
       foundation_type = HPXML::LocationOtherHousingUnit
       foundation_height = 0.0
+      rim_joist_height = 0.0
     end
 
     num_units_per_floor = num_units / num_floors
+    num_units_per_floor_actual = num_units_per_floor
+    above_ground_floors = num_floors
 
     if (num_floors > 1) && (level != 'Bottom') && (foundation_height != 0.0)
       runner.registerWarning('Unit is not on the bottom floor, setting foundation height to 0.')
       foundation_height = 0.0
+    end
+
+    if num_floors == 1
+      level = 'Bottom'
     end
 
     if (num_units_per_floor % 2 == 0) && ((corridor_position == 'Double-Loaded Interior') || (corridor_position == 'Double Exterior'))
@@ -2041,7 +2038,15 @@ class Geometry
       runner.registerWarning('Specified a balcony, but there is no inset.')
       balcony_depth = 0
     end
-    if (unit_width < 3) && (horizontal_location == 'Middle')
+    if (unit_width == 1) && (horz_location != 'None')
+      runner.registerWarning("No #{horz_location} location exists, setting horizontal location to 'None'")
+      horz_location = 'None'
+    end
+    if (unit_width > 1) && (horz_location == 'None')
+      runner.registerError('Specified incompatible horizontal location for the corridor and unit configuration.')
+      return false
+    end
+    if (unit_width < 3) && (horz_location == 'Middle')
       runner.registerError('No middle horizontal location exists.')
       return false
     end
@@ -2050,52 +2055,57 @@ class Geometry
     cfa = UnitConversions.convert(cfa, 'ft^2', 'm^2')
     wall_height = UnitConversions.convert(wall_height, 'ft', 'm')
     foundation_height = UnitConversions.convert(foundation_height, 'ft', 'm')
-
-    # starting spaces
-    runner.registerInitialCondition("The building started with #{model.getSpaces.size} spaces.")
+    corridor_width = UnitConversions.convert(corridor_width, 'ft', 'm')
+    inset_width = UnitConversions.convert(inset_width, 'ft', 'm')
+    inset_depth = UnitConversions.convert(inset_depth, 'ft', 'm')
+    balcony_depth = UnitConversions.convert(balcony_depth, 'ft', 'm')
+    rim_joist_height = UnitConversions.convert(rim_joist_height, 'ft', 'm')
 
     # calculate the dimensions of the unit
     footprint = cfa + inset_width * inset_depth
     x = Math.sqrt(footprint / aspect_ratio)
     y = footprint / x
 
+    story_hash = { 'Bottom' => 0, 'Middle' => 1, 'Top' => num_floors - 1 }
+    z = wall_height * story_hash[level]
+
     foundation_corr_polygon = nil
     foundation_front_polygon = nil
     foundation_back_polygon = nil
 
     # create the front prototype unit footprint
-    nw_point = OpenStudio::Point3d.new(0, 0, 0)
-    ne_point = OpenStudio::Point3d.new(x, 0, 0)
-    sw_point = OpenStudio::Point3d.new(0, -y, 0)
-    se_point = OpenStudio::Point3d.new(x, -y, 0)
+    nw_point = OpenStudio::Point3d.new(0, 0, rim_joist_height)
+    ne_point = OpenStudio::Point3d.new(x, 0, rim_joist_height)
+    sw_point = OpenStudio::Point3d.new(0, -y, rim_joist_height)
+    se_point = OpenStudio::Point3d.new(x, -y, rim_joist_height)
 
     if inset_width * inset_depth > 0
       if inset_position == 'Right'
         # unit footprint
-        inset_point = OpenStudio::Point3d.new(x - inset_width, inset_depth - y, 0)
-        front_point = OpenStudio::Point3d.new(x - inset_width, -y, 0)
-        side_point = OpenStudio::Point3d.new(x, inset_depth - y, 0)
+        inset_point = OpenStudio::Point3d.new(x - inset_width, inset_depth - y, rim_joist_height)
+        front_point = OpenStudio::Point3d.new(x - inset_width, -y, rim_joist_height)
+        side_point = OpenStudio::Point3d.new(x, inset_depth - y, rim_joist_height)
         living_polygon = make_polygon(sw_point, nw_point, ne_point, side_point, inset_point, front_point)
         # unit balcony
         if balcony_depth > 0
-          inset_point = OpenStudio::Point3d.new(x - inset_width, inset_depth - y, wall_height)
-          side_point = OpenStudio::Point3d.new(x, inset_depth - y, wall_height)
-          se_point = OpenStudio::Point3d.new(x, inset_depth - y - balcony_depth, wall_height)
-          front_point = OpenStudio::Point3d.new(x - inset_width, inset_depth - y - balcony_depth, wall_height)
+          inset_point = OpenStudio::Point3d.new(x - inset_width, inset_depth - y, wall_height + rim_joist_height)
+          side_point = OpenStudio::Point3d.new(x, inset_depth - y, wall_height + rim_joist_height)
+          se_point = OpenStudio::Point3d.new(x, inset_depth - y - balcony_depth, wall_height + rim_joist_height)
+          front_point = OpenStudio::Point3d.new(x - inset_width, inset_depth - y - balcony_depth, wall_height + rim_joist_height)
           shading_surface = OpenStudio::Model::ShadingSurface.new(OpenStudio::Point3dVector.new([front_point, se_point, side_point, inset_point]), model)
         end
       else
         # unit footprint
-        inset_point = OpenStudio::Point3d.new(inset_width, inset_depth - y, 0)
-        front_point = OpenStudio::Point3d.new(inset_width, -y, 0)
-        side_point = OpenStudio::Point3d.new(0, inset_depth - y, 0)
+        inset_point = OpenStudio::Point3d.new(inset_width, inset_depth - y, rim_joist_height)
+        front_point = OpenStudio::Point3d.new(inset_width, -y, rim_joist_height)
+        side_point = OpenStudio::Point3d.new(0, inset_depth - y, rim_joist_height)
         living_polygon = make_polygon(side_point, nw_point, ne_point, se_point, front_point, inset_point)
         # unit balcony
         if balcony_depth > 0
-          inset_point = OpenStudio::Point3d.new(inset_width, inset_depth - y, wall_height)
-          side_point = OpenStudio::Point3d.new(0, inset_depth - y, wall_height)
-          sw_point = OpenStudio::Point3d.new(0, inset_depth - y - balcony_depth, wall_height)
-          front_point = OpenStudio::Point3d.new(inset_width, inset_depth - y - balcony_depth, wall_height)
+          inset_point = OpenStudio::Point3d.new(inset_width, inset_depth - y, wall_height + rim_joist_height)
+          side_point = OpenStudio::Point3d.new(0, inset_depth - y, wall_height + rim_joist_height)
+          sw_point = OpenStudio::Point3d.new(0, inset_depth - y - balcony_depth, wall_height + rim_joist_height)
+          front_point = OpenStudio::Point3d.new(inset_width, inset_depth - y - balcony_depth, wall_height + rim_joist_height)
           shading_surface = OpenStudio::Model::ShadingSurface.new(OpenStudio::Point3dVector.new([front_point, sw_point, side_point, inset_point]), model)
         end
       end
@@ -2130,29 +2140,23 @@ class Geometry
     end
     living_spaces_front << living_space
 
-    ##############################################################################################
     # Map unit location to adiabatic surfaces
     horz_hash = { 'Left' => ['right'], 'Right' => ['left'], 'Middle' => ['left', 'right'], 'None' => [] }
     level_hash = { 'Bottom' => ['RoofCeiling'], 'Top' => ['Floor'], 'Middle' => ['RoofCeiling', 'Floor'], 'None' => [] }
-    adb_facade = horz_hash[horizontal_location]
+    adb_facade = horz_hash[horz_location]
     adb_level = level_hash[level]
 
     # Check levels
     if num_floors == 1
       adb_level = []
     end
-    # Check for exposed left and right facades
-    if (num_units_per_floor == 1) || ((num_units_per_floor == 2) && (has_rear_units == true))
-      adb_facade = []
-    end
     if (has_rear_units == true)
       adb_facade += ['back']
     end
 
-    adiabatic_surf = adb_facade + horz_hash[horizontal_location] + level_hash[level]
-    # Make surfaces adiabatic
+    adiabatic_surf = adb_facade + adb_level
+    # Make living space surfaces adiabatic
     model.getSpaces.each do |space|
-      # Store has_rear_units to call in the door geometry measure
       space.surfaces.each do |surface|
         os_facade = get_facade_for_surface(surface)
         if surface.surfaceType == 'Wall'
@@ -2168,20 +2172,20 @@ class Geometry
           if (adb_level.include? surface.surfaceType)
             surface.setOutsideBoundaryCondition('Adiabatic')
           end
+
         end
       end
     end
-    ##############################################################################################
 
     if (corridor_position == 'Double-Loaded Interior')
       interior_corridor_width = corridor_width / 2 # Only half the corridor is attached to a unit
       # corridors
       if corridor_width > 0
         # create the prototype corridor
-        nw_point = OpenStudio::Point3d.new(0, interior_corridor_width, 0)
-        ne_point = OpenStudio::Point3d.new(x, interior_corridor_width, 0)
-        sw_point = OpenStudio::Point3d.new(0, 0, 0)
-        se_point = OpenStudio::Point3d.new(x, 0, 0)
+        nw_point = OpenStudio::Point3d.new(0, interior_corridor_width, rim_joist_height)
+        ne_point = OpenStudio::Point3d.new(x, interior_corridor_width, rim_joist_height)
+        sw_point = OpenStudio::Point3d.new(0, 0, rim_joist_height)
+        se_point = OpenStudio::Point3d.new(x, 0, rim_joist_height)
         corr_polygon = make_polygon(sw_point, nw_point, ne_point, se_point)
 
         if (foundation_height > 0) && foundation_corr_polygon.nil?
@@ -2190,32 +2194,24 @@ class Geometry
 
         # create corridor zone
         corridor_zone = OpenStudio::Model::ThermalZone.new(model)
-        corridor_zone.setName('corridor zone')
+        corridor_zone.setName(HPXML::LocationOtherHousingUnit)
         corridor_space = OpenStudio::Model::Space::fromFloorPrint(corr_polygon, wall_height, model)
         corridor_space = corridor_space.get
-        corridor_space_name = 'corridor space'
-        corridor_space.setName(corridor_space_name)
+        corridor_space.setName(HPXML::LocationOtherHousingUnit)
         corridor_space_type = OpenStudio::Model::SpaceType.new(model)
-        corridor_space_type.setStandardsSpaceType('corridor')
+        corridor_space_type.setStandardsSpaceType(HPXML::LocationOtherHousingUnit)
 
         corridor_space.setSpaceType(corridor_space_type)
         corridor_space.setThermalZone(corridor_zone)
-
-        # Make walls of corridor adiabatic
-        if has_rear_units == true
-          corridor_space.surfaces.each do |surface|
-            os_facade = get_facade_for_surface(surface)
-          end
-        end
       end
 
     elsif (corridor_position == 'Double Exterior') || (corridor_position == 'Single Exterior (Front)')
       interior_corridor_width = 0
       # front access
-      nw_point = OpenStudio::Point3d.new(0, -y, wall_height)
-      sw_point = OpenStudio::Point3d.new(0, -y - corridor_width, wall_height)
-      ne_point = OpenStudio::Point3d.new(x, -y, wall_height)
-      se_point = OpenStudio::Point3d.new(x, -y - corridor_width, wall_height)
+      nw_point = OpenStudio::Point3d.new(0, -y, wall_height + rim_joist_height)
+      sw_point = OpenStudio::Point3d.new(0, -y - corridor_width, wall_height + rim_joist_height)
+      ne_point = OpenStudio::Point3d.new(x, -y, wall_height + rim_joist_height)
+      se_point = OpenStudio::Point3d.new(x, -y - corridor_width, wall_height + rim_joist_height)
 
       shading_surface = OpenStudio::Model::ShadingSurface.new(OpenStudio::Point3dVector.new([sw_point, se_point, ne_point, nw_point]), model)
       shading_surface_group = OpenStudio::Model::ShadingSurfaceGroup.new(model)
@@ -2228,17 +2224,20 @@ class Geometry
       foundation_spaces = []
 
       # foundation corridor
+      foundation_corridor_space = nil
       if (corridor_width > 0) && (corridor_position == 'Double-Loaded Interior')
-        corridor_space = OpenStudio::Model::Space::fromFloorPrint(foundation_corr_polygon, foundation_height, model)
-        corridor_space = corridor_space.get
+        foundation_corridor_space = OpenStudio::Model::Space::fromFloorPrint(foundation_corr_polygon, foundation_height, model)
+        foundation_corridor_space = foundation_corridor_space.get
         m = initialize_transformation_matrix(OpenStudio::Matrix.new(4, 4, 0))
-        m[2, 3] = foundation_height
-        corridor_space.changeTransformation(OpenStudio::Transformation.new(m))
-        corridor_space.setXOrigin(0)
-        corridor_space.setYOrigin(0)
-        corridor_space.setZOrigin(0)
+        m[2, 3] = foundation_height + rim_joist_height
+        foundation_corridor_space.changeTransformation(OpenStudio::Transformation.new(m))
+        foundation_corridor_space.setXOrigin(0)
+        foundation_corridor_space.setYOrigin(0)
+        foundation_corridor_space.setZOrigin(0)
+        foundation_spaces << foundation_corridor_space
 
-        foundation_spaces << corridor_space
+        # Rim Joist
+        add_rim_joist(model, foundation_corr_polygon, foundation_corridor_space, rim_joist_height, 0)
       end
 
       # foundation front
@@ -2246,7 +2245,7 @@ class Geometry
       foundation_space = OpenStudio::Model::Space::fromFloorPrint(foundation_front_polygon, foundation_height, model)
       foundation_space = foundation_space.get
       m = initialize_transformation_matrix(OpenStudio::Matrix.new(4, 4, 0))
-      m[2, 3] = foundation_height
+      m[2, 3] = foundation_height + rim_joist_height
       foundation_space.changeTransformation(OpenStudio::Transformation.new(m))
       foundation_space.setXOrigin(0)
       foundation_space.setYOrigin(0)
@@ -2254,6 +2253,31 @@ class Geometry
 
       foundation_space_front << foundation_space
       foundation_spaces << foundation_space
+
+      foundation_spaces.each do |foundation_space| # (corridor and foundation)
+        next unless [HPXML::FoundationTypeCrawlspaceVented, HPXML::FoundationTypeCrawlspaceUnvented, HPXML::FoundationTypeBasementUnconditioned].include?(foundation_type)
+        # create foundation zone
+        foundation_zone = OpenStudio::Model::ThermalZone.new(model)
+
+        if foundation_type == HPXML::FoundationTypeCrawlspaceVented
+          foundation_space_name = HPXML::LocationCrawlspaceVented
+        elsif foundation_type == HPXML::FoundationTypeCrawlspaceUnvented
+          foundation_space_name = HPXML::LocationCrawlspaceUnvented
+        elsif foundation_type == HPXML::FoundationTypeBasementUnconditioned
+          foundation_space_name = HPXML::LocationBasementUnconditioned
+        end
+        foundation_zone.setName(foundation_space_name)
+        foundation_space.setName(foundation_space_name)
+        foundation_space_type = OpenStudio::Model::SpaceType.new(model)
+        foundation_space_type.setStandardsSpaceType(foundation_space_name)
+        foundation_space.setSpaceType(foundation_space_type)
+
+        # set these to the foundation zone
+        foundation_space.setThermalZone(foundation_zone)
+      end
+
+      # Rim Joist
+      add_rim_joist(model, foundation_front_polygon, foundation_space, rim_joist_height, 0)
 
       # put all of the spaces in the model into a vector
       spaces = OpenStudio::Model::SpaceVector.new
@@ -2265,43 +2289,56 @@ class Geometry
       OpenStudio::Model.intersectSurfaces(spaces)
       OpenStudio::Model.matchSurfaces(spaces)
 
-      if ([HPXML::FoundationTypeCrawlspaceVented, HPXML::FoundationTypeCrawlspaceUnvented, HPXML::FoundationTypeBasementUnconditioned].include? foundation_type)
-        foundation_space = make_one_space_from_multiple_spaces(model, foundation_spaces)
-        if (foundation_type == HPXML::FoundationTypeCrawlspaceVented) || (foundation_type == HPXML::FoundationTypeCrawlspaceUnvented)
-          foundation_space.setName("#{foundation_type} space")
-          foundation_zone = OpenStudio::Model::ThermalZone.new(model)
-          foundation_zone.setName("#{foundation_type} zone")
-          foundation_space.setThermalZone(foundation_zone)
-          if foundation_type == HPXML::FoundationTypeCrawlspaceVented
-            foundation_space_type_name = 'vented crawlspace'
-          else
-            foundation_space_type_name = 'unvented crawlspace'
-          end
-        elsif foundation_type == HPXML::FoundationTypeBasementUnconditioned
-          foundation_space.setName("#{foundation_type} space")
-          foundation_zone = OpenStudio::Model::ThermalZone.new(model)
-          foundation_zone.setName("#{foundation_type} zone")
-          foundation_space.setThermalZone(foundation_zone)
-          foundation_space_type_name = 'unconditioned basement'
-        end
-        foundation_space_type = OpenStudio::Model::SpaceType.new(model)
-        foundation_space_type.setStandardsSpaceType(foundation_space_type_name)
-        foundation_space.setSpaceType(foundation_space_type)
-      end
-
-      # set foundation walls to ground
-      spaces = model.getSpaces
-      spaces.each do |space|
-        next unless get_space_floor_z(space) + UnitConversions.convert(space.zOrigin, 'm', 'ft') < 0
+      # Foundation space boundary conditions
+      model.getSpaces.each do |space|
+        next unless get_space_floor_z(space) + UnitConversions.convert(space.zOrigin, 'm', 'ft') < 0 # Foundation
+        next if space.name.get.include? 'corridor'
 
         surfaces = space.surfaces
         surfaces.each do |surface|
-          next if surface.surfaceType.downcase != 'wall'
+          next unless surface.surfaceType.downcase == 'wall'
 
-          surface.setOutsideBoundaryCondition('Foundation')
+          os_facade = get_facade_for_surface(surface)
+          if adb_facade.include?(os_facade) && (os_facade != 'RoofCeiling') && (os_facade != 'Floor')
+            surface.setOutsideBoundaryCondition('Adiabatic')
+          elsif getSurfaceZValues([surface]).min < 0
+            surface.setOutsideBoundaryCondition('Foundation')
+          else
+            surface.setOutsideBoundaryCondition('Outdoors')
+          end
         end
       end
 
+      # Foundation corridor space boundary conditions
+      foundation_corr_obcs = []
+      if not foundation_corridor_space.nil?
+        foundation_corridor_space.surfaces.each do |surface|
+          next unless surface.surfaceType.downcase == 'wall'
+
+          os_facade = get_facade_for_surface(surface)
+          if adb_facade.include? os_facade
+            surface.setOutsideBoundaryCondition('Adiabatic')
+          else
+            surface.setOutsideBoundaryCondition('Foundation')
+          end
+        end
+      end
+    end
+
+    # Corridor space boundary conditions
+    model.getSpaces.each do |space|
+      next unless is_corridor(space)
+
+      space.surfaces.each do |surface|
+        os_facade = get_facade_for_surface(surface)
+        if adb_facade.include? os_facade
+          surface.setOutsideBoundaryCondition('Adiabatic')
+        end
+
+        if (adb_level.include? surface.surfaceType)
+          surface.setOutsideBoundaryCondition('Adiabatic')
+        end
+      end
     end
 
     # put all of the spaces in the model into a vector
@@ -2314,15 +2351,26 @@ class Geometry
     OpenStudio::Model.intersectSurfaces(spaces)
     OpenStudio::Model.matchSurfaces(spaces)
 
-    # make all surfaces adjacent to corridor spaces into adiabatic surfaces
+    # make corridor floors adiabatic if no exterior walls to avoid exposed perimeter error
+    exterior_obcs = ['Foundation', 'Ground', 'Outdoors']
+    obcs_hash = {}
     model.getSpaces.each do |space|
-      next unless space.spaceType.get.standardsSpaceType.get == 'corridor'
+      next unless space.name.get.include? 'corridor' # corridor and foundation corridor spaces
+
+      space_name = space.name
+      obcs_hash[space_name] = []
+      space.surfaces.each do |surface|
+        next unless surface.surfaceType.downcase == 'wall'
+
+        obcs_hash[space_name] << surface.outsideBoundaryCondition
+      end
+
+      next if (obcs_hash[space_name] & exterior_obcs).any?
 
       space.surfaces.each do |surface|
-        if surface.adjacentSurface.is_initialized # only set to adiabatic if the corridor surface is adjacent to another surface
-          surface.adjacentSurface.get.setOutsideBoundaryCondition('Adiabatic')
-          surface.setOutsideBoundaryCondition('Adiabatic')
-        end
+        next unless surface.surfaceType.downcase == 'floor'
+
+        surface.setOutsideBoundaryCondition('Adiabatic')
       end
     end
 
@@ -2333,7 +2381,23 @@ class Geometry
       surface.setOutsideBoundaryCondition('Foundation')
     end
 
+    # set adjacent corridor walls to adiabatic
+    model.getSpaces.each do |space|
+      next unless is_corridor(space)
+
+      space.surfaces.each do |surface|
+        if surface.adjacentSurface.is_initialized && (surface.surfaceType.downcase == 'wall')
+          surface.adjacentSurface.get.setOutsideBoundaryCondition('Adiabatic')
+          surface.setOutsideBoundaryCondition('Adiabatic')
+        end
+      end
+    end
+
     return true
+  end
+
+  def self.is_corridor(space_or_zone)
+    return space_or_zone_is_of_type(space_or_zone, HPXML::LocationOtherHousingUnit)
   end
 
   # Returns true if space is either fully or partially below grade
@@ -2386,7 +2450,7 @@ class Geometry
         floor_vertices.each_with_index do |fv1, fidx|
           fv2 = floor_vertices[fidx - 1]
           # Wall within floor edge?
-          next unless is_point_between([wv1.x, wv1.y, wv1.z], [fv1.x, fv1.y, fv1.z], [fv2.x, fv2.y, fv2.z]) && is_point_between([wv2.x, wv2.y, wv2.z], [fv1.x, fv1.y, fv1.z], [fv2.x, fv2.y, fv2.z])
+          next unless is_point_between([wv1.x, wv1.y, wv1.z + wall_surface.space.get.zOrigin], [fv1.x, fv1.y, fv1.z + floor_surface.space.get.zOrigin], [fv2.x, fv2.y, fv2.z + floor_surface.space.get.zOrigin]) && is_point_between([wv2.x, wv2.y, wv2.z + wall_surface.space.get.zOrigin], [fv1.x, fv1.y, fv1.z + floor_surface.space.get.zOrigin], [fv2.x, fv2.y, fv2.z + floor_surface.space.get.zOrigin])
 
           if not adjacent_wall_surfaces.include? wall_surface
             adjacent_wall_surfaces << wall_surface
@@ -2457,19 +2521,13 @@ class Geometry
   end
 
   def self.get_edges_for_surfaces(surfaces, use_top_edge)
-    top_z = -99999
-    bottom_z = 99999
-    surfaces.each do |surface|
-      top_z = [getSurfaceZValues([surface]).max, top_z].max
-      bottom_z = [getSurfaceZValues([surface]).min, bottom_z].min
-    end
     edges = []
     edge_counter = 0
     surfaces.each do |surface|
       if use_top_edge
-        matchz = top_z
+        matchz = getSurfaceZValues([surface]).max
       else
-        matchz = bottom_z
+        matchz = getSurfaceZValues([surface]).min
       end
 
       # get vertices
@@ -2584,5 +2642,36 @@ class Geometry
     zvalues = getSurfaceZValues([surface])
     zrange = zvalues.max - zvalues.min
     return zrange
+  end
+
+  def self.get_conditioned_attic_height(spaces)
+    # gable roof type
+    get_conditioned_spaces(spaces).each do |space|
+      space.surfaces.each do |surface|
+        next if surface.vertices.size != 3
+        next if surface.outsideBoundaryCondition != 'Outdoors'
+        next if surface.surfaceType != 'Wall'
+
+        return get_height_of_spaces([space])
+      end
+    end
+
+    # hip roof type
+    get_conditioned_spaces(spaces).each do |space|
+      space.surfaces.each do |surface|
+        next if surface.outsideBoundaryCondition != 'Outdoors'
+        next if surface.surfaceType != 'RoofCeiling'
+
+        return get_height_of_spaces([space])
+      end
+    end
+
+    return false
+  end
+
+  def self.surface_is_rim_joist(surface, height)
+    return false unless (height - Geometry.get_surface_height(surface)).abs < 0.00001
+    return false unless Geometry.getSurfaceZValues([surface]).max > 0
+    return true
   end
 end

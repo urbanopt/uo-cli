@@ -620,6 +620,7 @@
         "attic_type": "attic - vented",
         "system_type": "Residential - furnace and central air conditioner",
         "heating_system_fuel_type": "natural gas",
+        "onsite_parking_fraction": 1,
         "template": "Residential IECC 2015 - Customizable Template Sep 2020"
       },
       "geometry": {
@@ -660,7 +661,7 @@
         "floor_area": 4260,
         "footprint_area": 2130,
         "number_of_stories_above_ground": 2,
-        "number_of_stories": 2,
+        "number_of_stories": 3,
         "number_of_bedrooms": 4,
         "foundation_type": "basement - unconditioned",
         "attic_type": "attic - unvented",
@@ -700,13 +701,13 @@
       "type": "Feature",
       "properties": {
         "id": "16",
-        "name": "Residential 3",
+        "name": "Residenital 3",
         "type": "Building",
         "building_type": "Single-Family Detached",
         "floor_area": 5500,
-        "footprint_area": 4655,
-        "number_of_stories_above_ground": 1,
-        "number_of_stories": 1,
+        "footprint_area": 1833,
+        "number_of_stories_above_ground": 2,
+        "number_of_stories": 3,
         "number_of_bedrooms": 5,
         "foundation_type": "basement - conditioned",
         "attic_type": "attic - conditioned",
@@ -745,6 +746,100 @@
             [
               -78.84901642777548,
               42.81281054264619
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "17",
+        "name": "Residential 4",
+        "type": "Building",
+        "building_type": "Single-Family Attached",
+        "floor_area": 18320,
+        "footprint_area": 9160,
+        "number_of_stories_above_ground": 2,
+        "number_of_stories": 2,
+        "number_of_bedrooms": 6,
+        "foundation_type": "slab",
+        "attic_type": "attic - vented",
+        "system_type": "Residential - furnace and room air conditioner",
+        "heating_system_fuel_type": "fuel oil",
+        "number_of_residential_units": 4,
+        "template": "Residential IECC 2015 - Customizable Template Sep 2020"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -78.84911656368786,
+              42.81252982958267
+            ],
+            [
+              -78.84890198696667,
+              42.81258229954116
+            ],
+            [
+              -78.84870886759019,
+              42.81219926882915
+            ],
+            [
+              -78.84893774986267,
+              42.812152045720157
+            ],
+            [
+              -78.84911656368786,
+              42.81252982958267
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "18",
+        "name": "Residential 5",
+        "type": "Building",
+        "building_type": "Multifamily",
+        "floor_area": 28636,
+        "footprint_area": 14318,
+        "number_of_stories_above_ground": 2,
+        "number_of_stories": 2,
+        "number_of_bedrooms": 16,
+        "foundation_type": "slab",
+        "attic_type": "flat roof",
+        "system_type": "Residential - furnace and room air conditioner",
+        "heating_system_fuel_type": "wood",
+        "number_of_residential_units": 8,
+        "template": "Residential IECC 2015 - Customizable Template Sep 2020"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -78.84857296921837,
+              42.81262558701127
+            ],
+            [
+              -78.84849429130556,
+              42.81245768365727
+            ],
+            [
+              -78.84770035743714,
+              42.8126465749435
+            ],
+            [
+              -78.8478219506942,
+              42.812809230906598
+            ],
+            [
+              -78.84857296921837,
+              42.81262558701127
             ]
           ]
         ]

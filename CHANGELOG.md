@@ -1,8 +1,21 @@
 # Changelog
 
+## Version 0.5.2
+
+Date Range 3/9/21 - 3/31/21
+
+- Fixed [#190]( https://github.com/urbanopt/urbanopt-cli/issues/190 ), Graceful rescue from "uo" command
+- Fixed [#191]( https://github.com/urbanopt/urbanopt-cli/issues/191 ), add error catching
+- Fixed [#197]( https://github.com/urbanopt/urbanopt-cli/issues/197 ), Update copyrights for 2021
+- Fixed [#200]( https://github.com/urbanopt/urbanopt-cli/issues/200 ), Scenario Level Assumptions File cannot be Defined by User
+- Fixed [#202]( https://github.com/urbanopt/urbanopt-cli/issues/202 ), Use the new Ditto-Reader CLI in the UO CLI - Remove Pycall Dependency
+- Fixed [#214]( https://github.com/urbanopt/urbanopt-cli/issues/214 ), reopt-scenario processing should allow selecting assumptions file
+- Fixed [#215]( https://github.com/urbanopt/urbanopt-cli/issues/215 ), Support running GMT (DES) directly from the main CLI
+- Fixed [#219]( https://github.com/urbanopt/urbanopt-cli/issues/219 ), Avoid saving feature reports twice.
+
 ## Version 0.5.1
 
-Date Range 12/17/20 - 3/8/20
+Date Range 12/17/20 - 3/8/21
 
 - Fixed [#157]( https://github.com/urbanopt/urbanopt-cli/issues/157 ), Edit maximum value for y axis in visualization graphs
 - Fixed [#158]( https://github.com/urbanopt/urbanopt-cli/issues/158 ), Check units for Gas:Facility in visualization graphs
