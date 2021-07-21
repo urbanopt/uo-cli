@@ -291,7 +291,9 @@
         "floor_area": 10689,
         "footprint_area": 10689,
         "number_of_stories": 1,
-        "ev_charging": true
+        "ev_charging": true,
+        "wkdy_op_hrs_start_time": 6,
+        "wkdy_op_hrs_duration": 10
       },
       "geometry": {
         "type": "Polygon",
@@ -331,7 +333,11 @@
         "building_type": "Office",
         "system_type": "VAV district chilled water with district hot water reheat",
         "number_of_stories": 6,
-        "detailed_model_filename": "7.osm"
+        "detailed_model_filename": "7.osm",
+        "wkdy_op_hrs_start_time": 9.5,
+        "wkdy_op_hrs_duration": 6.5,
+        "wknd_op_hrs_start_time": 12,
+        "wknd_op_hrs_duration": 4
       },
       "geometry": {
         "type": "Polygon",
