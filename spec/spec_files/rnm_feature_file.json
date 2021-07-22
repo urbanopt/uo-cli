@@ -1,0 +1,340 @@
+{
+  "type": "FeatureCollection",
+  "project": {
+    "id": "7c33a001-bccb-413e-ac87-67558b5d4b07",
+    "name": "New Project",
+    "surface_elevation": null,
+    "import_surrounding_buildings_as_shading": null,
+    "weather_filename": "USA_NY_Buffalo-Greater.Buffalo.Intl.AP.725280_TMY3.epw",
+    "tariff_filename": null,
+    "climate_zone": "6A",
+    "cec_climate_zone": null,
+    "begin_date": "2017-01-01T07:00:00.000Z",
+    "end_date": "2017-12-31T07:00:00.000Z",
+    "timesteps_per_hour": 1,
+    "default_template": "90.1-2013",
+    "underground_cables_ratio": "0.9",
+    "only_lv_consumers": false,
+    "max_number_of_lv_nodes_per_building": 1
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "53340c2c-ab20-40db-aba1-11ac607c52a7",
+        "begin_date": "2017-01-01T07:00:00.000Z",
+        "cec_climate_zone": null,
+        "climate_zone": "6A",
+        "default_template": "90.1-2013",
+        "end_date": "2017-12-31T07:00:00.000Z",
+        "import_surrounding_buildings_as_shading": null,
+        "name": "Site Origin",
+        "surface_elevation": null,
+        "tariff_filename": null,
+        "timesteps_per_hour": 1,
+        "type": "Site Origin",
+        "weather_filename": "USA_NY_Buffalo-Greater.Buffalo.Intl.AP.725280_TMY3.epw"
+      },
+      "geometry": {
+        "coordinates": [
+          -78.84948467732347,
+          42.81677154451123
+        ],
+        "type": "Point"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "2",
+        "building_type": "Food service",
+        "floor_area": 22313,
+        "footprint_area": 22313,
+        "name": "Restaurant 1",
+        "number_of_stories": 1,
+        "type": "Building"
+      },
+      "geometry": {
+        "coordinates": [
+          [
+            [
+              -78.8500120420453,
+              42.81812185529549
+            ],
+            [
+              -78.85038975191084,
+              42.81803226424341
+            ],
+            [
+              -78.850630729414,
+              42.81857888627522
+            ],
+            [
+              -78.85025301954843,
+              42.81866847653532
+            ],
+            [
+              -78.8500120420453,
+              42.81812185529549
+            ]
+          ]
+        ],
+        "type": "Polygon"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "5",
+        "name": "Restaurant 14",
+        "type": "Building",
+        "footprint_area": 8804,
+        "floor_area": 8804,
+        "number_of_stories": 1,
+        "building_type": "Food service"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -78.84809175426629,
+              42.81367038997507
+            ],
+            [
+              -78.84848670778973,
+              42.81357515750889
+            ],
+            [
+              -78.84857883872144,
+              42.81378076888831
+            ],
+            [
+              -78.84818388519801,
+              42.81387600103781
+            ],
+            [
+              -78.84809175426629,
+              42.81367038997507
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -78.8489681482315,
+            42.82123330461977
+          ],
+          [
+            -78.84544909000398,
+            42.812979756818265
+          ]
+        ]
+      },
+      "type": "Feature",
+      "properties": {
+        "type": "Road",
+        "id": "26956ab1-6006-410f-8761-8c5336af7478",
+        "total_length": 3155
+      }
+    },
+    {
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -78.84535253047943,
+            42.813213901246286
+          ],
+          [
+            -78.84992837905885,
+            42.81208842580139
+          ]
+        ]
+      },
+      "type": "Feature",
+      "properties": {
+        "type": "Road",
+        "id": "a23de270-6f78-4b8c-a94f-c33066027738",
+        "total_length": 1292
+      }
+    },
+    {
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -78.8494884967804,
+            42.811915273915076
+          ],
+          [
+            -78.85327577590942,
+            42.82022601764069
+          ]
+        ]
+      },
+      "type": "Feature",
+      "properties": {
+        "type": "Road",
+        "id": "edb9ec8c-1c0d-4127-bbb5-74c4694c5dfc",
+        "total_length": 3197
+      }
+    },
+    {
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -78.85342597961424,
+            42.81980106352452
+          ],
+          [
+            -78.84859800338745,
+            42.82096574561655
+          ]
+        ]
+      },
+      "type": "Feature",
+      "properties": {
+        "type": "Road",
+        "id": "79f54743-f060-4b70-b111-00fa146c9ed1",
+        "total_length": 1360
+      }
+    },
+    {
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -78.85085105895996,
+            42.82085557392571
+          ],
+          [
+            -78.84721398353577,
+            42.812592137623426
+          ]
+        ]
+      },
+      "type": "Feature",
+      "properties": {
+        "type": "Road",
+        "id": "46d5a837-c737-4ccc-bcd6-9ed019a559e5",
+        "total_length": 3168
+      }
+    },
+    {
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -78.84607672691344,
+            42.815755983691304
+          ],
+          [
+            -78.85104417800902,
+            42.814496760865865
+          ]
+        ]
+      },
+      "type": "Feature",
+      "properties": {
+        "type": "Road",
+        "id": "bb98d362-6e28-4968-9ca5-67f1c3232f10",
+        "total_length": 1406
+      }
+    },
+    {
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -78.84950324892998,
+            42.817851352339574
+          ],
+          [
+            -78.85200977325438,
+            42.817239472684264
+          ]
+        ]
+      },
+      "type": "Feature",
+      "properties": {
+        "type": "Road",
+        "id": "97b60c2e-f4d8-4375-9636-fb3622f4d746",
+        "total_length": 707
+      }
+    },
+    {
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -78.85010808706282,
+            42.81902394080427
+          ],
+          [
+            -78.84816884994507,
+            42.81950595478102
+          ]
+        ]
+      },
+      "type": "Feature",
+      "properties": {
+        "type": "Road",
+        "id": "316f45e4-c14a-44ee-b92f-b5521aa1a86b",
+        "total_length": 548
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "5840ecc6-7f2b-400c-a683-528d02f140f6",
+        "geometryType": "Rectangle",
+        "name": "New District System_1",
+        "type": "District System",
+        "footprint_area": 24983,
+        "footprint_perimeter": 689,
+        "district_system_type": "Electrical Substation"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -78.85567193142118,
+              42.81641251053426
+            ],
+            [
+              -78.85530837052585,
+              42.81650816115567
+            ],
+            [
+              -78.85561262989047,
+              42.81713042140092
+            ],
+            [
+              -78.85597619078581,
+              42.817034771742016
+            ],
+            [
+              -78.85567193142118,
+              42.81641251053426
+            ]
+          ]
+        ]
+      }
+    }
+  ],
+  "mappers": [],
+  "scenarios": [
+    {
+      "feature_mappings": [],
+      "id": "72301739-c6c3-4dd7-bf1a-f37c8eff40db",
+      "name": "New Scenario"
+    }
+  ]
+}
